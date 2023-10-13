@@ -1,0 +1,34 @@
+
+
+start OMIT
+
+function balanceOf(
+    address owner
+) external view returns (uint256 balance);
+
+function tokenOfOwnerByIndex(
+    address owner, 
+    uint256 index
+) public view virtual override returns (uint256);
+
+
+end OMIT
+
+let tokens = []
+let bal = await token.balanceOf(owner.address)
+for (let j = 0; j < bal; j++) {
+    tokens.push(
+        await token.tokenOfOwnerByIndex(owner.address,j)
+    ) 
+}
+
+done OMIT
+// cannot access private variables in ERC721Enumerable :-(
+function getTokens(address owner) external view returns (uint256[] memory result) {
+    uint256 bal = balanceOf(owner);
+    result = new uint256[](bal);
+    for (uint256 pos = 0; pos < bal; pos++) {
+        result[pos] = tokenOfOwnerByIndex(owner,pos);
+    }
+}
+ok OMIT

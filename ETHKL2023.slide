@@ -1,0 +1,260 @@
+Random Stuff Learned from Building a multi chain community platform
+13 Oct 2023
+Tags: Ethereum, Solidity, Smart Contracts, ETHKL, Ethereum Malaysia
+
+Dave Appleton
+Blockchain Dev, Galaxis.xyz
+dave@galaxis.xyz
+https://sorry.af
+@AppletonDave
+
+* 
+
+.background images/bloktex.png
+
+* 
+
+.image images/dilbert-blockchain.png 500 _
+
+
+* Todays Agenda
+- What's with the hat?
+- How Galaxis started
+- Some of the Components that make up Galaxis
+- Some of the coding concepts
+- Important tools
+- Questions?
+
+* So what's with the hat ?
+
+.image images/dave.jpg 200 200
+- coding since '68
+- blockchain since 2014
+- ethereum since late 2015
+- HelloGold
+- Ether Cards
+- Galaxis
+
+* Something about Galaxis
+
+.image images/Tachyon2019.png 200 300
+- started from Ether Cards
+- putting NFC chips with NFTs in physical goods
+- did projects for Ethereum Foundation and Consensys
+- Finally launched Ether Cards NFT collection
+
+* Something about Galaxis
+.background images/10.jpg
+
+* Galaxis Primary Goals
+
+- build end engage communities
+- enable community members to support community goals
+- an NFT that is a Membership Card
+- an NFT with perks
+- an NFT that you can interact with
+
+* 
+.background images/GalaxisProjects.jpeg
+
+* some of the design considerations
+
+- Should be usable by people with NO web3 experience at all
+- It should be easy to use by admins and end users alike
+- Dashboards show all necessary information
+
+
+* Some of the coding concepts
+-   IMPORTANT : Certain Contracts at the same address regardless of chain
+-   Registries
+-   Proxies or Clones
+-   Factories should deploy proxies and grant permissions as needed
+-   Contracts should be front end friendly
+-   Random Numbers per community (without the fiddly setup)
+-   Bridges
+
+* Contracts at the same address
+
+- for any given wallet address, the addresses of the contracts deployed from that address are predictable
+
+.code address_test/address.go /start OMIT/,/end OMIT/
+
+.code address_test/address.go /b4 OMIT/,/a4 OMIT/
+
+* Registries ( crosschain / multi tiered search )
+
+- a collection of lookups e.g. string to Address, string to UINT
+- contracts using this information can look discover the information
+
+.image images/registry_entries.png 400 400
+
+* Proxies or Clones
+
+- when deploying a contract many times use a GOLDEN and verify it
+- deploy proxies for the copies (remember to initialise them)
+- clone for an exact (initialised) copy
+.code proxy/proxy.sol /start OMIT/,/end OMIT/
+
+* Factories
+
+A factory allows a verified person to 
+- deploy contracts
+- configure them
+- grant permissions
+- any other operations
+
+With NO technical knowledge
+
+* Transactions vs CALLS
+
+Beginner level stuff...
+
+A transaction 
+- changes the blockchain
+- needs to be propagated
+- costs a tx fee (gas)
+- returned data cannot be read directly by an EOA (wallet)
+
+A call (view or pure) 
+- returns the current state of a contract
+- only talks to your local node
+- doesn't cost a tx fee (gas)
+
+CALLS do not cost anything right ?
+
+* Let's have a look at ERC721Enumerable
+
+.code proxy/721.code /start OMIT/,/end OMIT/
+
+so we can get all the tokens in owner's wallet
+
+.code proxy/721.code /end OMIT/,/done OMIT/
+
+If the user has 12 NFTs on that contract, you make 13 Infura calls and wait for 13 responses
+
+* Contracts should be front end friendly
+
+Do not expect your front end to call your contract repeatedly to
+- iterate through entries
+- get different settings
+
+This will be SLOW and may incur cost in RPC calls
+
+instead - have view functions that return a lot of information in one large structure
+
+.code proxy/721.code /done OMIT/,/ok OMIT/
+
+
+remember, VIEW functions do not cost Tx fees but are called via RPC and are subject to block gas limit. You may need to paginate data.
+
+* Random Numbers
+
+You can't have any form of gamification without random numbers. 
+Chainlink VRF is the gold standard and quite easy to use.
+Chainlink provide a UI for their VRF Subscription manager with these simple functions
+
+- create account
+- fund account
+- add a VRF consumer for your account
+- request a random number
+
+Since each of these is a contract call, we were able to build a subscription manager contract that would automate all these functions including deploying a random consumer per community and automatically link new NFT Collections to request a random number on the community account for the reveal process.
+
+* Bridges
+
+- Create a new community by burning a launchkey on the Ethereum Mainnet
+- We want our users to be able to select the home chain for their community.
+- The Contract that burns the launchkey sends a message to the target chain 
+
+- Users can transfer GLX tokens between chains
+- Users can transfer NFTs between chains 
+- side quests on child chains can send messages back to the home chain
+
+First Bridges :
+
+Polgon Fx Tunnel
+Optimism Bridge
+
+Replaced by : Chainlink CCIP - one interface / sending contract  for all destinations
+
+* Sending via CCIP
+
+This code will send a message (and ERC20 tokens if required) to another chain
+
+    Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](0);
+    Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
+      receiver: receiver,
+      data: data,
+      tokenAmounts: tokenAmounts,
+      // If extraArgs is left empty (0 length byte array), a default of 200,000 gas will be set and no strict sequencing.
+      extraArgs: gas,
+      feeToken: feeToken
+    });
+    messageId = i_router.ccipSend(destinationChainSelector, message);
+
+Note : addresses such as *receiver* are encoded as bytes
+
+* receiving via CCIP
+
+
+
+    function ccipReceive(Client.Any2EVMMessage calldata message) external 
+      onlyRouter
+      validChain(message.sourceChainSelector)  
+    {
+        address sender = abi.decode(message.sender,(address));
+        require(sender == rootSender,"L2_OmniReceiver : INVALID_ROOT_SENDER");
+        < extract required variables from data >
+
+you can treat message.data as a slice or use abi.decode
+
+    address community_admin         = address(bytes20(message.data[4:24]));
+
+receiving contract must indicate that it implements IAny2EVMMessageReceiver
+
+   function supportsInterface(
+        bytes4 interfaceId
+    ) public pure override (AccessControlEnumerable,IERC165) returns (bool) {
+        return 
+            interfaceId == type(IAny2EVMMessageReceiver).interfaceId || 
+            interfaceId == type(IERC165).interfaceId;
+    }
+
+* If you haven't stopped me by now and we still have time...
+
+    bytes32 constant BRIDGE_DATA_STORAGE_POSITION = keccak256("bridge.data.is.fixed");
+
+    struct BridgeData {
+        uint256                    someNumber;
+        mapping(uint256 => bool)   someMap;
+        ...
+        ...
+    }
+
+    function bridgeData() internal pure returns (BridgeData storage ds) {
+        bytes32 position = BRIDGE_DATA_STORAGE_POSITION;
+        assembly {
+            ds.slot := position
+        }
+    }
+
+    ...
+
+    BridgeData storage bd = bridgeData()
+    bd.someNumber = 5;
+    bd.someMap[4] = true;
+    ...
+    
+* What does that do ?
+
+-    it FIXES the slot of the data structure.
+
+-    This allows a program to proxy some functions but share the data without worrying about data collisions
+
+-    This allows you to circumvent the EVM 24K limit.
+
+-    This is the core of data sharing in EIP Diamonds - but you can skip the complexity and implement a simpler version yourself.
+
+
+
+
